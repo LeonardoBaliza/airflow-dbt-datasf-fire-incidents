@@ -1,0 +1,6 @@
+
+version: 2
+
+models:
+  - name: agg_count_by_time
+    description: "A starter dbt model"
