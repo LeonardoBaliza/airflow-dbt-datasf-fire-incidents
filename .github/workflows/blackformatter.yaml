@@ -6,7 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rpsf/black@stable
+      - uses: psf/black@stable
         with:
           options: "--check --verbose --line-length 120"
-          src: "./dags
+          src: "./dags/datasf_fire_incidents ./dags/public
