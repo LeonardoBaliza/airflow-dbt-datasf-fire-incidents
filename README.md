@@ -121,3 +121,24 @@ This DAG can be triggered manually or scheduled to run after data ingestion DAGs
 To trigger the DAG manually from the Airflow UI, select `datasf_fire_incidents_run_dbt` and click "Trigger DAG". For automated workflows, set up dependencies so this DAG runs after data loading DAGs.
 
 ![Screenshot of run_dbt DAG](/assets/datasf_fire_incidents_run_dbt-graph.png)
+
+### DBT
+#### dbt_artifacts Package
+
+This project utilizes the [dbt_artifacts](https://hub.getdbt.com/brooklyn-data/dbt_artifacts/latest/) package developed by Brooklyn Data Co. The package provides the following benefits:
+
+1. **Historical Run Tracking**: Captures metadata about each dbt run, including:
+   - Runtime statistics
+   - Model execution status
+   - Test results
+   - Model dependencies
+
+2. **Performance Monitoring**: Enables tracking of model runtime trends over time to identify bottlenecks and optimization opportunities.
+
+3. **Lineage Analysis**: Stores model dependency information to facilitate impact analysis and data lineage visualization.
+
+4. **Self-Documenting Pipeline**: Creates a queryable source of truth about the dbt environment that complements dbt docs.
+
+5. **Automation Support**: Provides machine-readable metadata that can be used by other tools or dashboards.
+
+The artifacts are stored in a dedicated schema (`dbt_artifacts`) as defined in the project configuration, allowing them to be queried and analyzed separately from the main data models.

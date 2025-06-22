@@ -244,6 +244,26 @@ def initial_loader():
             ("idx_fire_incident_date", ["incident_date"], ""),
         ]
 
+        # Add primary key constraint to 'id' column if not exists
+        add_pk_sql = f"""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+            SELECT 1
+            FROM information_schema.table_constraints
+            WHERE table_schema = 'datasf'
+              AND table_name = '{TABLE_NAME}'
+              AND constraint_type = 'PRIMARY KEY'
+            ) THEN
+            ALTER TABLE datasf.{TABLE_NAME}
+            ADD CONSTRAINT {TABLE_NAME}_pkey PRIMARY KEY (id);
+            END IF;
+        END
+        $$;
+        """
+        logger.info("Ensuring primary key constraint on 'id' column...")
+        pg_hook.run(add_pk_sql)
+
         for idx_name, columns, idx_type in indexes:
             columns_str = ", ".join([f'"{col}"' for col in columns])
             create_idx_sql = f"""
@@ -253,7 +273,7 @@ def initial_loader():
             logger.info(f"Creating index {idx_name}...")
             pg_hook.run(create_idx_sql)
 
-        logger.info("All indexes created successfully")
+        logger.info("All indexes and constraints created successfully")
 
     create_schema_task = create_schema()
     create_table_task = create_table()

@@ -1,5 +1,6 @@
 import pandas as pd
 import logging
+import time
 from sodapy import Socrata
 from airflow.decorators import dag, task
 from airflow.providers.postgres.hooks.postgres import PostgresHook
@@ -21,6 +22,7 @@ def initial_loader():
     @task()
     def download_csv(**context):
         logger = logging.getLogger("airflow.task")
+        start_time = time.time()
         logger.info("Starting incremental download of Fire Incidents data from SFGOV Open Data.")
 
         client = Socrata("data.sfgov.org", None)
@@ -35,36 +37,86 @@ def initial_loader():
         offset = 0
         limit = 1000
         total_fetched = 0
+        batch_count = 0
+
         while True:
-            logger.info(f"Fetching batch: offset={offset}, limit={limit}")
+            batch_start = time.time()
+            logger.info(f"Fetching batch {batch_count+1}: offset={offset}, limit={limit}")
+
             batch = client.get("wr8u-xric", where=f"data_as_of >= '{extract_date}'", limit=limit, offset=offset)
-            logger.info(f"Fetched {len(batch)} records in this batch.")
+            batch_count += 1
+            batch_size = len(batch)
+            batch_duration = time.time() - batch_start
+
+            logger.info(f"Batch {batch_count}: Fetched {batch_size} records in {batch_duration:.2f} seconds.")
+
             if not batch:
                 logger.info("No more records to fetch.")
                 break
+
             results.extend(batch)
-            total_fetched += len(batch)
-            if len(batch) < limit:
+            total_fetched += batch_size
+
+            if batch_size < limit:
                 logger.info("Last batch fetched; exiting loop.")
                 break
-            offset += limit
-        logger.info(f"Total records fetched: {total_fetched}")
 
-        return results
+            offset += limit
+
+        # Log validation counts
+        unique_incidents = len(set(item.get("incident_number") for item in results if "incident_number" in item))
+
+        duration = time.time() - start_time
+        logger.info(f"Download completed in {duration:.2f} seconds.")
+        logger.info(f"Total records fetched: {total_fetched} across {batch_count} batches")
+        logger.info(f"Unique incident numbers: {unique_incidents}")
+
+        return {
+            "data": results,
+            "metadata": {
+                "total_records": total_fetched,
+                "unique_incidents": unique_incidents,
+                "extract_date": extract_date,
+                "batch_count": batch_count,
+                "duration_seconds": duration,
+            },
+        }
 
     @task()
-    def load_to_postgres(items: list):
+    def load_to_postgres(download_result: dict):
         logger = logging.getLogger("airflow.task")
+        start_time = time.time()
+
+        items = download_result["data"]
+        metadata = download_result["metadata"]
+
+        logger.info(f"Starting database load process with {metadata['total_records']} records.")
+        logger.info(f"Extract date: {metadata['extract_date']}, Unique incidents: {metadata['unique_incidents']}")
 
         if not items:
             logger.info("No items to load. Skipping database upsert.")
-            return
+            return {"records_processed": 0, "duration_seconds": time.time() - start_time}
 
         df = pd.DataFrame(items)
         logger.info(f"Loaded data into DataFrame with shape: {df.shape}")
 
+        # Validate data before loading
+        missing_id_count = df["id"].isna().sum() if "id" in df.columns else "id column not found"
+        logger.info(f"Data validation - Missing IDs: {missing_id_count}")
+
+        df_columns = set(df.columns)
+        logger.info(f"Columns in DataFrame: {len(df_columns)}")
+
+        # Start database operations with timing
+        db_start_time = time.time()
         pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
         engine = pg_hook.get_sqlalchemy_engine()
+
+        # Get current count before insert
+        pre_count_query = f"SELECT COUNT(*) FROM datasf.{TABLE_NAME}"
+        pre_count = pg_hook.get_first(pre_count_query)[0]
+        logger.info(f"Pre-upsert row count in table: {pre_count}")
+
         conn = engine.connect()
         trans = conn.begin()
         try:
@@ -81,6 +133,11 @@ def initial_loader():
             # Build target fields
             target_fields = [col for col in df.columns]
 
+            # Log before upsert
+            logger.info(f"Attempting upsert with {len(rows)} rows and {len(target_fields)} columns")
+            logger.info(f"Using conflict fields: {conflict_fields}")
+
+            upsert_start = time.time()
             pg_hook.insert_rows(
                 table=f"datasf.{TABLE_NAME}",
                 rows=rows,
@@ -89,8 +146,24 @@ def initial_loader():
                 replace=True,
                 replace_index=conflict_fields,
             )
+            upsert_duration = time.time() - upsert_start
             trans.commit()
-            logger.info("Upsert completed successfully using PostgresHook.")
+            logger.info(f"Upsert completed successfully in {upsert_duration:.2f} seconds")
+
+            # Get post-upsert count
+            post_count_query = f"SELECT COUNT(*) FROM datasf.{TABLE_NAME}"
+            post_count = pg_hook.get_first(post_count_query)[0]
+            net_change = post_count - pre_count
+
+            logger.info(f"Post-upsert row count: {post_count} (net change: {net_change})")
+
+            # Get counts of updated vs inserted records
+            total_processed = len(rows)
+            inserted = net_change
+            updated = total_processed - inserted if inserted >= 0 else "Unknown"
+
+            logger.info(f"Records processed: {total_processed}, Inserted: {inserted}, Updated: {updated}")
+
         except Exception as e:
             trans.rollback()
             logger.error(f"Error during upsert: {e}")
@@ -98,10 +171,23 @@ def initial_loader():
         finally:
             conn.close()
 
-    items_list = download_csv()
-    load_task = load_to_postgres(items_list)
+        total_duration = time.time() - start_time
+        db_duration = time.time() - db_start_time
+        logger.info(f"Database operations completed in {db_duration:.2f} seconds")
+        logger.info(f"Total task duration: {total_duration:.2f} seconds")
 
-    items_list >> load_task
+        return {
+            "records_processed": len(rows),
+            "pre_count": pre_count,
+            "post_count": post_count,
+            "net_change": net_change,
+            "duration_seconds": total_duration,
+        }
+
+    download_result = download_csv()
+    load_result = load_to_postgres(download_result)
+
+    download_result >> load_result
 
 
 # Instantiate the DAG

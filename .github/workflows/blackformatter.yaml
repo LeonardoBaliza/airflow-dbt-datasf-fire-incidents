@@ -1,4 +1,5 @@
-name: Check Python Code Style with Black
+name: 
+
 on: [push, pull_request]
 jobs:
   linter_name:
@@ -11,4 +12,4 @@ jobs:
         uses: psf/black@stable
         with:
           options: "--check --verbose --line-length 120"
-          src: "./dags/datasf_fire_incidents ./dags/public"
+          src: "./dags/datasf_fire_incidents ./dags/public ./dags/dbt_upgrade"
