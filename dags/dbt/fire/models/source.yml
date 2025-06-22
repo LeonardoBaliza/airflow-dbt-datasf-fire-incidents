@@ -8,3 +8,10 @@ sources:
       - name: fire_incidents
         description: "This table contains raw data from the Fire dataset, which includes information about fire incidents."
         identifier: fire_incidents
+  - name: calendar
+    database: postgres
+    schema: public
+    tables:
+      - name: calendar
+        description: "This table contains calendar data, which is used for date-related calculations."        
+        identifier: calendar

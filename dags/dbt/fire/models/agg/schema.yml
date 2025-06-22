@@ -3,4 +3,10 @@ version: 2
 
 models:
   - name: agg_count_by_time
-    description: "A starter dbt model"
+    description: "Aggregates fire incident counts grouped by time intervals."
+
+  - name: agg_count_by_holiday
+    description: "Aggregates fire incident counts grouped by holidays."
+
+  - name: agg_count_by_weekend
+    description: "Aggregates fire incident counts grouped by weekends."

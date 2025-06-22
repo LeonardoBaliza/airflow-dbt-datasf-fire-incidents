@@ -1,0 +1,12 @@
+name: black-action
+on: [push, pull_request]
+jobs:
+  linter_name:
+    name: Black Formatter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rpsf/black@stable
+        with:
+          options: "--check --verbose --line-length 120"
+          src: "./dags/datasf_fire_incidents ./dags/public

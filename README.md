@@ -44,6 +44,18 @@ The `initial_loader.py` DAG is responsible for the initial ingestion of fire inc
 
 This DAG should be triggered once to perform the initial load of historical fire incident data. Subsequent updates should use the incremental loader DAG.
 
+#### Index Performance Strategy
+
+The initial loader implements a performance-optimized indexing strategy:
+- Indexes are created **after** bulk data loading to improve initial load performance
+- Key indexes include:
+  - `incident_number`: Primary identifier for fire incidents, optimizes lookups and joins
+  - `incident_date`: Accelerates time-based filtering and analysis
+- This strategy balances query performance against load time by:
+  1. Loading all data efficiently in a single transaction without index overhead
+  2. Creating targeted indexes after load completion to optimize subsequent queries
+  3. Focusing on columns most frequently used in filtering and join operations
+
 #### Example
 
 To trigger the DAG manually from the Airflow UI, select `datasf_fire_incidents_initial_loader` and click "Trigger DAG".
@@ -53,6 +65,38 @@ To trigger the DAG manually from the Airflow UI, select `datasf_fire_incidents_i
 #### Description
 
 The `incremental_load.py` DAG handles the regular ingestion of new or updated fire incident records from the DataSF API. It is designed to run on a schedule, fetching only data that has changed since the last 2 days, and updating the data warehouse accordingly.
+
+#### Merge & Deduplication Strategy
+
+The incremental loader implements a robust merge and deduplication strategy to ensure data consistency and accuracy:
+
+1. **Time-based Incremental Loading**:
+   - Uses Airflow's logical_date (execution_date) to determine the appropriate look-back period
+   - Queries the Socrata API for records with `data_as_of` timestamp greater than or equal to 2 days before the execution date
+   - This overlap window ensures no data is missed due to processing delays or timezone differences
+
+2. **Upsert Mechanism**:
+   - Implements a database-level upsert (INSERT ... ON CONFLICT) operation using PostgreSQL's native capabilities
+   - Uses the unique `id` field as the conflict identifier to detect duplicates
+   - When a duplicate is detected, the existing record is completely replaced with the new data
+   - This approach handles both new records and updates to existing records in a single transaction
+
+3. **Late-arriving Data Handling**:
+   - The 2-day lookback window accommodates late-arriving data
+   - Records updated after initial ingestion are automatically captured in subsequent runs
+   - Historical corrections and amendments are properly integrated without manual intervention
+
+4. **Transaction Safety**:
+   - All database operations are wrapped in a transaction
+   - Automatic rollback occurs if any part of the process fails
+   - Ensures database consistency even during partial failures
+
+5. **Batch Processing**:
+   - Data is fetched and processed in batches of 1,000 records
+   - Improves memory efficiency and allows processing of large datasets
+   - Records are committed every 1,000 rows to balance transaction size with performance
+
+This strategy provides a reliable method for keeping the fire incidents dataset current while handling edge cases such as data corrections, delayed updates, and ensuring no duplicate records exist in the final dataset.
 
 #### Usage
 

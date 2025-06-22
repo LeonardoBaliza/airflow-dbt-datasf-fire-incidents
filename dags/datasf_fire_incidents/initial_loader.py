@@ -231,12 +231,37 @@ def initial_loader():
         df.to_sql(TABLE_NAME, engine, if_exists="replace", index=False, schema="datasf")
         logger.info("Data successfully loaded into Postgres.")
 
+    @task()
+    def create_indexes():
+        logger = logging.getLogger("airflow.task")
+        logger.info("Creating indexes on datasf.fire_incidents table")
+
+        pg_hook = PostgresHook(postgres_conn_id=POSTGRES_CONN_ID)
+
+        # Define indexes to create - each tuple contains (name, columns, type)
+        indexes = [
+            ("idx_fire_incident_number", ["incident_number"], ""),
+            ("idx_fire_incident_date", ["incident_date"], ""),
+        ]
+
+        for idx_name, columns, idx_type in indexes:
+            columns_str = ", ".join([f'"{col}"' for col in columns])
+            create_idx_sql = f"""
+            CREATE INDEX IF NOT EXISTS {idx_name}
+            ON datasf.{TABLE_NAME} ({columns_str});
+            """
+            logger.info(f"Creating index {idx_name}...")
+            pg_hook.run(create_idx_sql)
+
+        logger.info("All indexes created successfully")
+
     create_schema_task = create_schema()
     create_table_task = create_table()
     csv_file = download_csv()
     load_task = load_to_postgres(csv_file)
+    indexes_task = create_indexes()
 
-    create_schema_task >> create_table_task >> csv_file >> load_task
+    create_schema_task >> create_table_task >> csv_file >> load_task >> indexes_task
 
 
 # Instantiate the DAG

@@ -8,7 +8,6 @@ from cosmos.profiles import PostgresUserPasswordProfileMapping
 CONNECTION_ID = "postgres_default"
 DB_NAME = "postgres"
 SCHEMA_NAME = "datasf"
-MODEL_TO_QUERY = "agg_count_by_time"
 DBT_PROJECT_PATH = f"{os.environ['AIRFLOW_HOME']}/dags/dbt/fire"
 DBT_EXECUTABLE_PATH = f"{os.environ['AIRFLOW_HOME']}/dbt_venv/bin/dbt"
 
@@ -33,7 +32,7 @@ execution_config = ExecutionConfig(
     catchup=False,
     tags=["etl", "datasf", "sfgov", "fire_incidents", "dbt"],
 )
-def my_simple_dbt_dag():
+def dbt_run():
     transform_data = DbtTaskGroup(
         group_id="transform_data",
         project_config=ProjectConfig(DBT_PROJECT_PATH),
@@ -41,13 +40,7 @@ def my_simple_dbt_dag():
         execution_config=execution_config,
     )
 
-    query_agg_count_by_time = SQLExecuteQueryOperator(
-        task_id="query_agg_count_by_time",
-        conn_id=CONNECTION_ID,
-        sql=f"SELECT * FROM {DB_NAME}.{SCHEMA_NAME}.{MODEL_TO_QUERY} LIMIT 100",
-    )
-
-    chain(transform_data, query_agg_count_by_time)
+    transform_data
 
 
-my_simple_dbt_dag()
+dbt_run()
