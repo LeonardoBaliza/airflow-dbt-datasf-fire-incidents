@@ -12,4 +12,4 @@ jobs:
         uses: psf/black@stable
         with:
           options: "--check --verbose --line-length 120"
-          src: "./dags/datasf_fire_incidents ./dags/public ./dags/dbt_upgrade"
+          src: "./dags/datasf_fire_incidents ./dags/public"
